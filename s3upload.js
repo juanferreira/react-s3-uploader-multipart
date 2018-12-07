@@ -60,37 +60,41 @@ S3Upload.prototype.handleFileSelect = function(files) {
 };
 
 S3Upload.prototype.uploadToS3 = function(file) {
-    var evaporateOptions = Object.assign(this.evaporateOptions, {
-        signerUrl: this.signingUrl
+    this.getSignedUrl && this.getSignedUrl(file, data => {
+      this.evaporateOptions = data
+
+      var evaporateOptions = Object.assign(this.evaporateOptions, {
+          signerUrl: this.signingUrl
+      });
+      return Evaporate.create(evaporateOptions).then(function(evaporate){
+        var addConfig = {
+          name: this.s3Path + file.name,
+          file: file,
+          progress: function(progressValue, stats){
+            return this.onProgress(progressValue, progressValue === 100 ? 'Finalizing' : 'Uploading', file, stats);
+          }.bind(this),
+          complete: function(_xhr, awsKey){
+            if (_xhr.status === 200) {
+              this.onProgress(100, 'Upload completed', file);
+            } else {
+              return this.onError('Upload error: ' + _xhr.status, file);
+            }
+          }.bind(this),
+          error: function(msg){
+            return this.onError(msg, file);
+          }.bind(this)
+        };
+        this.evaporate = evaporate;
+        evaporate.add(addConfig).then(
+          function(awsKey){
+            return this.onFinishS3Put(awsKey, file);
+          }.bind(this),
+          function(errorReason){
+            return this.onError(errorReason, file);
+          }.bind(this)
+        );
+      }.bind(this));
     });
-    return Evaporate.create(evaporateOptions).then(function(evaporate){
-      var addConfig = {
-        name: this.s3Path + file.name,
-        file: file,
-        progress: function(progressValue, stats){
-          return this.onProgress(progressValue, progressValue === 100 ? 'Finalizing' : 'Uploading', file, stats);
-        }.bind(this),
-        complete: function(_xhr, awsKey){
-          if (_xhr.status === 200) {
-            this.onProgress(100, 'Upload completed', file);
-          } else {
-            return this.onError('Upload error: ' + _xhr.status, file);
-          }
-        }.bind(this),
-        error: function(msg){
-          return this.onError(msg, file);
-        }.bind(this)
-      };
-      this.evaporate = evaporate;
-      evaporate.add(addConfig).then(
-        function(awsKey){
-          return this.onFinishS3Put(awsKey, file);
-        }.bind(this),
-        function(errorReason){
-          return this.onError(errorReason, file);
-        }.bind(this)
-      );
-    }.bind(this));
 };
 
 S3Upload.prototype.uploadFile = function(file) {
